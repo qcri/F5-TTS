@@ -133,8 +133,15 @@ def get_tokenizer(dataset_name, tokenizer: str = "pinyin"):
     elif tokenizer == "custom":
         with open(dataset_name, "r", encoding="utf-8") as f:
             vocab_char_map = {}
-            for i, char in enumerate(f):
-                vocab_char_map[char[:-1]] = i
+            for i, line in enumerate(f):
+                text = line.rstrip('\n\r')
+                if i == 0 and text == " ":
+                    token = text
+                else:
+                    token = text.strip()
+
+                if text not in vocab_char_map:
+                    vocab_char_map[token] = len(vocab_char_map)
         vocab_size = len(vocab_char_map)
 
     return vocab_char_map, vocab_size
