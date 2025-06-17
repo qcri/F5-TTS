@@ -293,7 +293,7 @@ def remove_silence_edges(audio, silence_threshold=-42):
 # preprocess reference audio and text
 
 
-def preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=print):
+def preprocess_ref_audio_text(ref_audio_orig, ref_text, sampling_rate=24000, show_info=print):
     show_info("Converting audio...")
 
     # Compute a hash of the reference audio file
@@ -344,6 +344,17 @@ def preprocess_ref_audio_text(ref_audio_orig, ref_text, show_info=print):
             show_info("Audio is over 12s, clipping short. (3)")
 
         aseg = remove_silence_edges(aseg) + AudioSegment.silent(duration=50)
+
+        # 4. resample to target sample rate
+        if aseg.frame_rate != sampling_rate:
+            show_info(f"Resampling audio from {aseg.frame_rate}Hz to {sampling_rate}Hz...")
+            aseg = aseg.set_frame_rate(sampling_rate)
+
+        # 5. convert to mono
+        if aseg.channels > 1:
+            show_info("Converting audio to mono...")
+            aseg = aseg.set_channels(1)
+
         aseg.export(temp_path, format="wav")
         ref_audio = temp_path
 
