@@ -42,6 +42,8 @@ dependencies = [
     "vocos",
     "wandb",
     "x_transformers>=1.31.14",
+    "tkseem",
+    "nemo-text-processing>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -62,3 +64,6 @@ Homepage = "https://github.com/SWivid/F5-TTS"
 "f5-tts_infer-gradio" = "f5_tts.infer.infer_gradio:main"
 "f5-tts_finetune-cli" = "f5_tts.train.finetune_cli:main"
 "f5-tts_finetune-gradio" = "f5_tts.train.finetune_gradio:main"
+
+[tool.setuptools]
+packages = ["f5_tts"]
