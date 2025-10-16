@@ -67,3 +67,4 @@ Homepage = "https://github.com/SWivid/F5-TTS"
 
 [tool.setuptools]
 packages = ["f5_tts"]
+package-dir = {"" = "src"}
