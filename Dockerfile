@@ -26,8 +26,7 @@ COPY pyproject.toml /workspace/F5-TTS
 COPY src /workspace/F5-TTS
 
 # Install dependencies
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip \
+RUN pip install --upgrade pip \
     && pip install -e . --cache-dir=$PIP_CACHE_DIR
 
 # ---------------------------
