@@ -22,8 +22,7 @@ RUN set -x \
 
 WORKDIR /workspace/F5-TTS
 
-COPY pyproject.toml /workspace/F5-TTS
-COPY src /workspace/F5-TTS
+COPY . /workspace/F5-TTS
 
 # Install dependencies
 RUN pip install --upgrade pip \
