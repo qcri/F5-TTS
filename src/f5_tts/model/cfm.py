@@ -200,6 +200,7 @@ class CFM(nn.Module):
             if not hasattr(self, "compiled_fn"):
                 self.compiled_fn = torch.compile(fn, mode="reduce-overhead", fullgraph=True, backend="inductor")
             fn = self.compiled_fn
+            torch.compiler.cudagraph_mark_step_begin()
 
         # noise input
         # to make sure batch inference result is same with different batch size, and for sure single inference
