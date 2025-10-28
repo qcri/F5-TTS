@@ -83,7 +83,7 @@ class CFM(nn.Module):
         return next(self.parameters()).device
 
     def compile(self):
-        self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor")
+        self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True)
         self.transformer = self.compiled_transformer
         self.compiled = True
 
@@ -200,7 +200,7 @@ class CFM(nn.Module):
 
         if getattr(self, "compiled", False):
             if not hasattr(self, "compiled_fn"):
-                self.compiled_fn = torch.compile(fn, mode="reduce-overhead", fullgraph=True, backend="inductor")
+                self.compiled_fn = torch.compile(fn, mode="max-autotune", fullgraph=True, backend="inductor", dynamic=True)
             fn = self.compiled_fn
             torch.compiler.cudagraph_mark_step_begin()
 
