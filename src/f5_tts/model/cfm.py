@@ -200,7 +200,7 @@ class CFM(nn.Module):
 
         if getattr(self, "compiled", False):
             if not hasattr(self, "compiled_fn"):
-                self.compiled_fn = torch.compile(fn, mode="max-autotune", fullgraph=True, backend="inductor", dynamic=True)
+                self.compiled_fn = torch.compile(fn, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True)
             fn = self.compiled_fn
             torch.compiler.cudagraph_mark_step_begin()
 
