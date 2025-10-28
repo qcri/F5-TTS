@@ -29,6 +29,8 @@ from f5_tts.model.utils import (
     mask_from_frac_lengths,
 )
 
+torch.backends.cudnn.fp32_precision = "tf32"
+
 
 class CFM(nn.Module):
     def __init__(
@@ -78,6 +80,11 @@ class CFM(nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    def compile(self):
+        self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor")
+        self.transformer = self.compiled_transformer
+        self.compiled = True
 
     @torch.no_grad()
     def sample(
@@ -188,6 +195,11 @@ class CFM(nn.Module):
             )
             pred, null_pred = torch.chunk(pred_cfg, 2, dim=0)
             return pred + (pred - null_pred) * cfg_strength
+
+        if getattr(self, "compiled", False):
+            if not hasattr(self, "compiled_fn"):
+                self.compiled_fn = torch.compile(fn, mode="reduce-overhead", fullgraph=True, backend="inductor")
+            fn = self.compiled_fn
 
         # noise input
         # to make sure batch inference result is same with different batch size, and for sure single inference
