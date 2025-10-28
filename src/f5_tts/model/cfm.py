@@ -31,6 +31,7 @@ from f5_tts.model.utils import (
 )
 
 torch.backends.cudnn.fp32_precision = "tf32"
+torch.set_float32_matmul_precision('high')
 
 
 class CFM(nn.Module):
@@ -86,6 +87,7 @@ class CFM(nn.Module):
         self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor")
         self.transformer = self.compiled_transformer
         self.compiled = True
+
 
     @torch.no_grad()
     def sample(
