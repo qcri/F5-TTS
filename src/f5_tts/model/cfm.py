@@ -82,13 +82,13 @@ class CFM(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def compile(self):
+    def torch_compile(self):
         self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True)
         self.transformer = self.compiled_transformer
         self.compiled = True
 
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def sample(
         self,
         cond: float["b n d"] | float["b nw"],  # noqa: F722
@@ -199,9 +199,6 @@ class CFM(nn.Module):
             return pred + (pred - null_pred) * cfg_strength
 
         if getattr(self, "compiled", False):
-            if not hasattr(self, "compiled_fn"):
-                self.compiled_fn = torch.compile(fn, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True)
-            fn = self.compiled_fn
             torch.compiler.cudagraph_mark_step_begin()
 
         # noise input
