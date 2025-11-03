@@ -2,7 +2,7 @@
 # ---------------------------
 # F5-TTS Base Image
 # ---------------------------
-FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel AS builder
+FROM pytorch/pytorch:2.9.0-cuda12.8-cudnn9-devel AS builder
 
 USER root
 ARG DEBIAN_FRONTEND=noninteractive
@@ -31,7 +31,7 @@ RUN pip install --upgrade pip \
 # ---------------------------
 # Runtime Image
 # ---------------------------
-FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime
 
 WORKDIR /workspace/F5-TTS
 
