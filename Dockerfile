@@ -16,9 +16,12 @@ RUN set -x \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        wget curl git openssl libssl-dev unzip build-essential aria2 \
-       sox libsox-fmt-all libsox-fmt-mp3 libsndfile1-dev ffmpeg \
+       sox libsox-fmt-all libsox-fmt-mp3 libsndfile1-dev \
        librdmacm1 libibumad3 librdmacm-dev libibverbs1 libibverbs-dev ibverbs-utils ibverbs-providers \
     && rm -rf /var/lib/apt/lists/*
+
+# --- Install FFmpeg 6 from Savoury1 PPA ---
+RUN conda install -y -c conda-forge "ffmpeg>=6,<8" libiconv && conda clean -afy
 
 WORKDIR /workspace/F5-TTS
 
