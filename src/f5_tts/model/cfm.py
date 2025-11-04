@@ -145,7 +145,8 @@ class CFM(nn.Module):
             torch.maximum((text != -1).sum(dim=-1), lens) + 1, duration
         )  # duration at least text/audio prompt length plus one token, so something is generated
         duration = duration.clamp(max=max_duration)
-        max_duration = duration.amax()
+        # leave max_duration
+        # max_duration = duration.amax()
 
         # duplicate test corner for inner time step oberservation
         if duplicate_test:
@@ -164,7 +165,7 @@ class CFM(nn.Module):
         if batch > 1:
             mask = lens_to_mask(duration)
         else:  # save memory and speed up, as single inference need no mask currently
-            mask = None
+            mask = lens_to_mask(duration, length=max_duration)
 
         # neural ode
 
@@ -209,7 +210,9 @@ class CFM(nn.Module):
         for dur in duration:
             if exists(seed):
                 torch.manual_seed(seed)
-            y0.append(torch.randn(dur, self.num_channels, device=self.device, dtype=step_cond.dtype))
+            s = torch.randn(dur, self.num_channels, device=self.device, dtype=step_cond.dtype)
+            s = F.pad(s, (0, 0, 0, max_duration - dur), value=0.0)
+            y0.append(s)
         y0 = pad_sequence(y0, padding_value=0, batch_first=True)
 
         t_start = 0
