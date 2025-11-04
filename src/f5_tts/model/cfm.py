@@ -83,8 +83,8 @@ class CFM(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def torch_compile(self):
-        self.compiled_transformer = torch.compile(self.transformer, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True)
+    def torch_compile(self, mode="reduce-overhead", fullgraph=True, backend="inductor", dynamic=True):
+        self.compiled_transformer = torch.compile(self.transformer, mode=mode, fullgraph=fullgraph, backend=backend, dynamic=dynamic)
         self.transformer = self.compiled_transformer
         self.compiled = True
 
