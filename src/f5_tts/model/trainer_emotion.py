@@ -344,8 +344,8 @@ class TrainerConditioned:
 
             text_inputs = batch["text"]
             emotion_inputs = batch["emotion"]
-            mel_spec = batch["mel"].permute(0, 2, 1).to("cuda")
-            mel_lengths = batch["mel_lengths"].to("cuda")
+            mel_spec = batch["mel"].permute(0, 2, 1).to(self.accelerator.device)
+            mel_lengths = batch["mel_lengths"].to(self.accelerator.device)
             first_phrase_length = batch["first_phrase_length"]
             ref_audio_len = mel_lengths.item()
 
