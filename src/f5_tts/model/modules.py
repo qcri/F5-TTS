@@ -705,6 +705,28 @@ class JointAttnProcessor:
         return x, c
 
 
+# FiLM modulation for emotion conditioning
+
+
+class EmotionFiLM(nn.Module):
+    def __init__(self, dim, emotion_embed_dim):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.proj = nn.Sequential(
+            nn.Linear(emotion_embed_dim, dim),
+            nn.SiLU(),
+            nn.Linear(dim, dim * 2),
+        )
+        nn.init.zeros_(self.proj[-1].weight)
+        nn.init.zeros_(self.proj[-1].bias)
+
+    def forward(self, x, emotion_embed):
+        emotion_global = emotion_embed.mean(dim=1)
+        params = self.proj(emotion_global)
+        scale, shift = params.chunk(2, dim=-1)
+        return self.norm(x) * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
+
 # DiT Block
 
 

@@ -1,4 +1,6 @@
 import json
+import random
+import wave
 from importlib.resources import files
 
 import torch
@@ -166,6 +168,193 @@ class CustomDataset(Dataset):
         }
 
 
+def _get_audio_duration(audio_path):
+    with wave.open(audio_path, "r") as wav_file:
+        frames = wav_file.getnframes()
+        rate = wav_file.getframerate()
+        return frames / float(rate)
+
+
+class CustomDatasetConditioned(Dataset):
+    def __init__(
+        self,
+        dataset_metadata_path: str,
+        preprocessed_mel=False,
+        mel_spec_module: nn.Module | None = None,
+        mel_spec_kwargs: dict = dict(),
+        emotion_conditioning_kwargs: dict = dict(),
+    ):
+        self.emotion_conditioning_kwargs = emotion_conditioning_kwargs
+        self.emotions = self.emotion_conditioning_kwargs["emotions"]
+
+        with open(dataset_metadata_path, "r") as file:
+            data = json.load(file)
+            if "ESD" in data:
+                data = data["ESD"]
+            elif "RAVDESS" in data:
+                data = data["RAVDESS"]
+            elif "CREMA-D" in data:
+                data = data["CREMA-D"]
+            else:
+                raise ValueError('Dataset descriptor must contain "ESD", "RAVDESS", or "CREMA-D" key.')
+
+        self.data = [sample for sample in data if sample["emotion"] in self.emotions]
+        self.data_mapping = self._index_data(self.data)
+
+        self.target_sample_rate = mel_spec_kwargs["target_sample_rate"]
+        self.hop_length = mel_spec_kwargs["hop_length"]
+        self.n_fft = mel_spec_kwargs["n_fft"]
+        self.win_length = mel_spec_kwargs["win_length"]
+        self.mel_spec_type = mel_spec_kwargs["mel_spec_type"]
+        self.preprocessed_mel = preprocessed_mel
+        self.n_mel_channels = mel_spec_kwargs["n_mel_channels"]
+
+        self.phrase_idxs = set(self.data_mapping)
+
+        if not self.preprocessed_mel:
+            self.mel_spectrogram = default(
+                mel_spec_module,
+                MelSpec(
+                    n_fft=self.n_fft,
+                    hop_length=self.hop_length,
+                    win_length=self.win_length,
+                    n_mel_channels=self.n_mel_channels,
+                    target_sample_rate=self.target_sample_rate,
+                    mel_spec_type=self.mel_spec_type,
+                ),
+            )
+
+    def _index_data(self, data):
+        nested_dict = {}
+        for index, sample in enumerate(data):
+            phrase_idx = sample["phrase_idx"]
+            speaker_id = sample["speaker_id"]
+            emotion = sample["emotion"]
+            nested_dict.setdefault(phrase_idx, {}).setdefault(speaker_id, {}).setdefault(emotion, []).append(index)
+        return nested_dict
+
+    def __len__(self):
+        return len(self.data)
+
+    def _sample_2nd_sentence(self, change_emotion, row, emotion, index, first_mel_spec, second_phrase_idx=None):
+        if change_emotion:
+            if second_phrase_idx is None:
+                if self.emotion_conditioning_kwargs["same_sentence"]:
+                    second_phrase_idx = row["phrase_idx"]
+                else:
+                    second_phrase_idx = random.choice(list(self.phrase_idxs))
+
+            try:
+                available_emotions = set(self.data_mapping[second_phrase_idx][row["speaker_id"]]) - {emotion}
+                second_emotion = random.choice(list(available_emotions))
+                second_row_index = self.data_mapping[second_phrase_idx][row["speaker_id"]][second_emotion]
+                second_row = self.data[second_row_index[0]]
+            except (KeyError, IndexError):
+                second_row = row
+        else:
+            max_num_attempts = 10
+            for _ in range(max_num_attempts):
+                if second_phrase_idx is None:
+                    if self.emotion_conditioning_kwargs["same_sentence"]:
+                        second_phrase_idx = row["phrase_idx"]
+                    else:
+                        second_phrase_idx = random.choice(list(self.phrase_idxs))
+
+                if row["speaker_id"] in self.data_mapping.get(second_phrase_idx, {}):
+                    if emotion in self.data_mapping[second_phrase_idx][row["speaker_id"]]:
+                        second_row_index = self.data_mapping[second_phrase_idx][row["speaker_id"]][emotion]
+                        second_row = self.data[second_row_index[0]]
+                        break
+            else:
+                second_row = row
+
+        audio, source_sample_rate = torchaudio.load(second_row["audio_path"])
+        duration = _get_audio_duration(second_row["audio_path"])
+
+        if audio.shape[0] > 1:
+            audio = torch.mean(audio, dim=0, keepdim=True)
+
+        if duration > 30 or duration < 0.3:
+            return self.__getitem__((index + 1) % len(self.data))
+
+        if source_sample_rate != self.target_sample_rate:
+            resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
+            audio = resampler(audio)
+
+        second_mel_spec = self.mel_spectrogram(audio)
+        second_mel_spec = second_mel_spec.squeeze(0)
+
+        emotions = [row["emotion"], second_row["emotion"]]
+        texts = [row["text"], second_row["text"]]
+        first_phrase_length = len(texts[0])
+        texts_concat = texts[0] + texts[1]
+        mel_specs_concat = torch.cat((first_mel_spec, second_mel_spec), dim=1)
+
+        return mel_specs_concat, texts_concat, emotions, first_phrase_length, second_phrase_idx
+
+    def __getitem__(self, index):
+        while True:
+            row = self.data[index]
+            audio_path = row["audio_path"]
+            text = row["text"]
+            emotion = row["emotion"]
+
+            duration = _get_audio_duration(audio_path)
+
+            audio, source_sample_rate = torchaudio.load(audio_path)
+            if audio.shape[0] > 1:
+                audio = torch.mean(audio, dim=0, keepdim=True)
+
+            if duration > 30 or duration < 0.3:
+                return self.__getitem__((index + 1) % len(self.data))
+
+            if source_sample_rate != self.target_sample_rate:
+                resampler = torchaudio.transforms.Resample(source_sample_rate, self.target_sample_rate)
+                audio = resampler(audio)
+
+            first_mel_spec = self.mel_spectrogram(audio)
+            first_mel_spec = first_mel_spec.squeeze(0)
+
+            if self.emotion_conditioning_kwargs["contrastive_loss"]:
+                mel_specs_concat_changed, texts_concat_changed, emotions_changed, first_phrase_length_changed, second_phrase_idx = self._sample_2nd_sentence(
+                    True, row, emotion, index, first_mel_spec
+                )
+                mel_specs_concat_unchanged, texts_concat_unchanged, emotions_unchanged, first_phrase_length_unchanged, _ = self._sample_2nd_sentence(
+                    False, row, emotion, index, first_mel_spec, second_phrase_idx=second_phrase_idx
+                )
+                if texts_concat_changed != texts_concat_unchanged or emotions_changed == emotions_unchanged:
+                    index += 1
+                    break
+                else:
+                    return [
+                        dict(
+                            mel_spec=mel_specs_concat_changed,
+                            text=texts_concat_changed,
+                            emotion=emotions_changed,
+                            first_phrase_length=first_phrase_length_changed,
+                        ),
+                        dict(
+                            mel_spec=mel_specs_concat_unchanged,
+                            text=texts_concat_unchanged,
+                            emotion=emotions_unchanged,
+                            first_phrase_length=first_phrase_length_unchanged,
+                        ),
+                    ]
+            else:
+                change_emotion = random.uniform(0, 1) < self.emotion_conditioning_kwargs["change_emotion_probability"]
+                mel_specs_concat, texts_concat, emotions, first_phrase_length, _ = self._sample_2nd_sentence(
+                    change_emotion, row, emotion, index, first_mel_spec
+                )
+                return [
+                    dict(
+                        mel_spec=mel_specs_concat,
+                        text=texts_concat,
+                        emotion=emotions,
+                        first_phrase_length=first_phrase_length,
+                    )
+                ]
+
+
 # Dynamic Batch Sampler
 class DynamicBatchSampler(Sampler[list[int]]):
     """Extension of Sampler that will do the following:
@@ -251,6 +440,7 @@ def load_dataset(
     audio_type: str = "raw",
     mel_spec_module: nn.Module | None = None,
     mel_spec_kwargs: dict = dict(),
+    emotion_conditioning_kwargs: dict = dict(),
 ) -> CustomDataset | HFDataset:
     """
     dataset_type    - "CustomDataset" if you want to use tokenizer name and default data path to load for train_dataset
@@ -304,10 +494,49 @@ def load_dataset(
             load_dataset(f"{pre}/{pre}", split=f"train.{post}", cache_dir=str(files("f5_tts").joinpath("../../data"))),
         )
 
+    elif dataset_type == "CustomDatasetConditioned":
+        train_dataset = CustomDatasetConditioned(
+            dataset_name, mel_spec_kwargs=mel_spec_kwargs, emotion_conditioning_kwargs=emotion_conditioning_kwargs
+        )
+
     return train_dataset
 
 
 # collation
+
+
+def collate_fn_emotion(batch):
+    dicts = []
+    for example_idx in range(len(batch[0])):
+        mel_specs = [item[example_idx]["mel_spec"].squeeze(0) for item in batch]
+        mel_lengths = torch.LongTensor([spec.shape[-1] for spec in mel_specs])
+        max_mel_length = mel_lengths.amax()
+
+        padded_mel_specs = []
+        for spec in mel_specs:
+            padding = (0, max_mel_length - spec.size(-1))
+            padded_spec = F.pad(spec, padding, value=0)
+            padded_mel_specs.append(padded_spec)
+
+        mel_specs = torch.stack(padded_mel_specs)
+
+        text = [item[example_idx]["text"] for item in batch]
+        emotion = [item[example_idx]["emotion"] for item in batch]
+        text_lengths = torch.LongTensor([len(item) for item in text])
+        first_phrase_length = [item[example_idx]["first_phrase_length"] for item in batch]
+
+        dicts.append(
+            dict(
+                mel=mel_specs,
+                mel_lengths=mel_lengths,
+                text=text,
+                emotion=emotion,
+                text_lengths=text_lengths,
+                first_phrase_length=first_phrase_length,
+            )
+        )
+
+    return dicts
 
 
 def collate_fn(batch):
